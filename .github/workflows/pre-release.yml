@@ -101,7 +101,7 @@ jobs:
           cp .env.example release/.env.example
 
           cd release
-          zip -r ../lakasir-${VERSION}.zip ./*
+          zip -r ../lakasir-${VERSION}.zip .
         shell: bash
 
       - name: 🚀 Create GitHub Pre-release with ZIP
