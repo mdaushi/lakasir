@@ -12,6 +12,18 @@ services:
         depends_on:
             mysql:
                 condition: service_healthy
+    queue:
+        build:
+            context: .
+        entrypoint: []
+        command: php artisan queue:work --tries=3 --timeout=90
+        volumes:
+            - .:/app
+        networks:
+            - sail
+        depends_on:
+            mysql:
+                condition: service_healthy
     mysql:
         image: 'mysql/mysql-server:8.0'
         ports:
