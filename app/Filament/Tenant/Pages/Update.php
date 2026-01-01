@@ -57,14 +57,33 @@ class Update extends Page
             return;
         }
 
+        // Check if update is already in progress
+        $updateLock = Cache::lock('app:update:lock', 1200);
+        if (! $updateLock->get()) {
+            Notification::make()
+                ->warning()
+                ->title(__('Update Already in Progress'))
+                ->body(__('Another update is currently running. Please wait for it to complete.'))
+                ->send();
+
+            return;
+        }
+        $updateLock->release();
+
         try {
             dispatch(new RunAppUpdate());
+
+            Notification::make()
+                ->info()
+                ->title(__('Update Started'))
+                ->body(__('The update process has been initiated. Please wait for it to complete.'))
+                ->send();
         } catch (Exception $e) {
             report($e);
 
             Notification::make()
                 ->danger()
-                ->title(__('Failed to update the app'))
+                ->title(__('Failed to Update the App'))
                 ->body($e->getMessage())
                 ->send();
         }
@@ -97,18 +116,32 @@ class Update extends Page
             return;
         }
 
+        // Check if update is in progress
+        $updateLock = Cache::lock('app:update:lock', 1200);
+        if (! $updateLock->get()) {
+            Notification::make()
+                ->warning()
+                ->title(__('Update in Progress'))
+                ->body(__('Cannot restore while an update is in progress. Please wait for it to complete.'))
+                ->send();
+
+            return;
+        }
+        $updateLock->release();
+
         try {
             $appUpdateService->restoreApp();
             Notification::make()
                 ->success()
-                ->title(__('App restored successfully'))
+                ->title(__('App Restored Successfully'))
+                ->body(__('The application has been restored to the previous version.'))
                 ->send();
         } catch (Exception $e) {
             report($e);
 
             Notification::make()
                 ->danger()
-                ->title(__('Failed to restore the app'))
+                ->title(__('Failed to Restore the App'))
                 ->body($e->getMessage())
                 ->send();
         }

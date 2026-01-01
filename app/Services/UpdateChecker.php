@@ -15,13 +15,19 @@ class UpdateChecker
 
     public function getCurrentVersion(): string
     {
-        return trim(file_get_contents(base_path('version.txt')));
+        $versionFile = base_path('version.txt');
+
+        if (! file_exists($versionFile)) {
+            return 'Unknown';
+        }
+
+        return trim(file_get_contents($versionFile));
     }
 
     private function fetchAndCacheApiResponse(): ?array
     {
         return cache()->remember('api_response', now()->addMinutes(60 * 8), function () {
-            $response = Http::get($this->url);
+            $response = Http::timeout(30)->get($this->url);
 
             if (! $response->ok()) {
                 return null;

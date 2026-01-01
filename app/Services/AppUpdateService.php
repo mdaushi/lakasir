@@ -46,7 +46,7 @@ class AppUpdateService
         $log('🔍 Checking for updates...');
         $currentVersion = trim(file_get_contents(base_path('version.txt')));
 
-        $response = Http::get($this->url);
+        $response = Http::timeout(30)->get($this->url);
 
         if (! $response->ok()) {
             throw new Exception('Failed to fetch update $log.');
@@ -65,8 +65,33 @@ class AppUpdateService
         }
         $log('🚀 Updating from v'.$currentVersion.' to v'.$latestVersion.'...');
 
-        $zipUrl = $latest['assets'][0]['browser_download_url'];
-        $zipSize = $latest['assets'][0]['size'];
+        // Validate release assets
+        if (empty($latest['assets']) || !isset($latest['assets'][0])) {
+            throw new Exception('No release assets found in GitHub release.');
+        }
+
+        $asset = $latest['assets'][0];
+        $zipUrl = $asset['browser_download_url'] ?? null;
+        $zipSize = $asset['size'] ?? 0;
+
+        if (!$zipUrl) {
+            throw new Exception('Download URL not found in release assets.');
+        }
+
+        if (!str_ends_with($zipUrl, '.zip')) {
+            throw new Exception('Invalid asset format. Expected .zip file.');
+        }
+
+        // Check disk space before downloading
+        $freeSpace = disk_free_space(base_path());
+        $requiredSpace = $zipSize * 3; // Rough estimate: ZIP + extracted files + backup
+
+        if ($freeSpace < $requiredSpace) {
+            $freeSpaceMB = round($freeSpace / 1024 / 1024, 2);
+            $requiredSpaceMB = round($requiredSpace / 1024 / 1024, 2);
+            throw new Exception("Insufficient disk space. Required: {$requiredSpaceMB}MB, Available: {$freeSpaceMB}MB");
+        }
+
         $zipPath = storage_path('app/update.zip');
         $options = [
             'http' => [
@@ -107,14 +132,21 @@ class AppUpdateService
         $log('✅ Download completed.');
 
         $zip = new ZipArchive;
-        if ($zip->open($zipPath) === true) {
-            $log('☕ Extracting downloaded files...');
-            $extractPath = storage_path('app/update/lakasir/');
-            $zip->extractTo($extractPath);
-            $zip->close();
-        } else {
-            throw new Exception('❌ Failed to extract zip.');
+        $zipStatus = $zip->open($zipPath);
+
+        if ($zipStatus !== true) {
+            throw new Exception('Failed to open downloaded ZIP: '.$zip->getStatusString().' (Error code: '.$zipStatus.')');
         }
+
+        $log('☕ Extracting downloaded files...');
+        $extractPath = storage_path('app/update/lakasir/');
+
+        if (!$zip->extractTo($extractPath)) {
+            $zip->close();
+            throw new Exception('Failed to extract ZIP contents: '.$zip->getStatusString());
+        }
+
+        $zip->close();
 
         $folders = glob(storage_path('app/update/*'), GLOB_ONLYDIR);
         $updateFolder = $folders[0] ?? null;
@@ -140,9 +172,18 @@ class AppUpdateService
             exec($command);
         }
 
+        // Update version file
         file_put_contents(base_path('version.txt'), $latestVersion);
 
-        $log("✅ Update to v$latestVersion completed.");
+        // Verify update was successful
+        $log('🔍 Verifying update...');
+        $newVersion = trim(file_get_contents(base_path('version.txt')));
+
+        if ($newVersion !== $latestVersion) {
+            throw new Exception('Version verification failed. Expected v'.$latestVersion.', got v'.$newVersion);
+        }
+
+        $log("✅ Update to v$latestVersion completed successfully.");
         Cache::forget('update:progress');
     }
 
@@ -167,20 +208,32 @@ class AppUpdateService
         $logger = $this->logger;
         $log = fn ($text) => $logger ? $logger($text) : info($text);
         $log('📦 Backing up app...');
+
+        // Check disk space before backup
+        $freeSpace = disk_free_space(base_path());
+        $requiredSpace = 500 * 1024 * 1024; // Minimum 500MB required for backup
+
+        if ($freeSpace < $requiredSpace) {
+            $freeSpaceMB = round($freeSpace / 1024 / 1024, 2);
+            $requiredSpaceMB = round($requiredSpace / 1024 / 1024, 2);
+            throw new Exception("Insufficient disk space for backup. Required: {$requiredSpaceMB}MB, Available: {$freeSpaceMB}MB");
+        }
+
         $currentVersion = app(UpdateChecker::class)->getCurrentVersion();
         $path = storage_path('app/backups/app-backup-'.$currentVersion.'.zip');
         $backupDir = dirname($path);
-        if (! file_exists($backupDir)) {
-            mkdir($backupDir, 0777, true);
-        }
+
+        File::ensureDirectoryExists($backupDir, 0777, true);
 
         if (! file_exists($path)) {
             touch($path);
         }
 
         $zip = new ZipArchive;
-        if ($zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-            throw new Exception('Could not create backup zip file.');
+        $zipStatus = $zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+
+        if ($zipStatus !== true) {
+            throw new Exception('Could not create backup zip file: '.$zip->getStatusString().' (Error code: '.$zipStatus.')');
         }
 
         $base = base_path();
@@ -227,8 +280,10 @@ class AppUpdateService
         }
 
         $zip = new ZipArchive;
-        if ($zip->open($path) !== true) {
-            throw new Exception('Could not open backup zip file.');
+        $zipStatus = $zip->open($path);
+
+        if ($zipStatus !== true) {
+            throw new Exception('Could not open backup zip file: '.$zip->getStatusString().' (Error code: '.$zipStatus.')');
         }
 
         $zip->extractTo(base_path());
