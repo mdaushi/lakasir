@@ -20,7 +20,7 @@ trait HasPurchasingForm
                 ->native(false)
                 ->placeholder(__('Search...'))
                 ->relationship(name: $product, titleAttribute: 'name')
-                ->searchable(['sku', 'name', 'barcode'])
+                ->searchable(['sku', 'name'])
                 ->live()
                 ->afterStateUpdated(function (Set $set, ?string $state) {
                     $product = Product::find($state);
