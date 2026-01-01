@@ -58,7 +58,7 @@ trait TableProduct
                         ->columnStart(0),
                     TextColumn::make('name')
                         ->size('lg')
-                        ->searchable(['sku', 'name', 'barcode'])
+                        ->searchable(['sku', 'name'])
                         ->extraAttributes([
                             'class' => 'font-bold',
                         ]),
